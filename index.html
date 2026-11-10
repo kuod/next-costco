@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Next Costco — 50 Places Ripe for a Warehouse</title>
+<meta name="description" content="A data-driven ranking of the top 50 US cities most ready for a new Costco warehouse, scored on distance to the nearest warehouse, underserved population, income, education, density and metro saturation.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--ink:#14213d;--mute:#5b6577;--line:#e3e6ec;--red:#e31837;--blue:#005dab;--bar:#005dab}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1420;--card:#161e2e;--ink:#e8ecf4;--mute:#97a1b5;--line:#26314a;--red:#ff4d65;--blue:#5aa9ff;--bar:#5aa9ff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:0 16px}
+header{padding:36px 0 12px}
+h1{margin:0 0 6px;font-size:clamp(26px,5vw,40px);line-height:1.1}
+h1 span{color:var(--red)}
+.sub{color:var(--mute);max-width:70ch;margin:0}
+#map{height:420px;border-radius:12px;border:1px solid var(--line);margin:20px 0;z-index:0}
+.controls{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 14px}
+input,select{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+input{flex:1;min-width:180px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:760px}
+th,td{padding:10px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:nth-child(-n+2),td:nth-child(-n+2){text-align:left}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);cursor:pointer;user-select:none;position:sticky;top:0;background:var(--card)}
+th.on::after{content:" ▾"}th.on.asc::after{content:" ▴"}
+tbody tr{cursor:pointer}tbody tr:hover{background:color-mix(in srgb,var(--blue) 8%,transparent)}
+.rk{color:var(--mute);width:40px}
+.city b{display:block}.city small{color:var(--mute)}
+.score{display:inline-block;min-width:46px;padding:2px 8px;border-radius:99px;background:var(--blue);color:#fff;font-weight:700;text-align:center}
+tr.detail td{white-space:normal;text-align:left;background:color-mix(in srgb,var(--blue) 4%,transparent);cursor:default}
+.bars{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px 24px}
+.bar{font-size:13px}.bar div{height:6px;border-radius:3px;background:var(--line);margin-top:3px}.bar i{display:block;height:100%;border-radius:3px;background:var(--bar)}
+h2{margin:36px 0 8px;font-size:22px}
+.method p,.method li{color:var(--mute);max-width:80ch}
+.method code{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+footer{color:var(--mute);font-size:13px;padding:30px 0 50px}
+a{color:var(--blue)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:8px 0 16px}
+.panel h3{margin:0 0 2px;font-size:16px}.panel p{margin:0 0 10px;color:var(--mute);font-size:13px}
+.sl{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px 28px}
+.sl label{display:block;font-size:13px}.sl label b{float:right}
+.sl input[type=range]{width:100%;padding:0;accent-color:var(--blue)}
+.presets{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+button{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:99px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer}
+button:hover{border-color:var(--blue)}
+.dl{font-size:11px;margin-left:6px}.up{color:#1a8f4c}.dn{color:var(--red)}.nw{color:var(--blue)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Next <span>Costco</span></h1>
+  <p class="sub">The 50 US cities and towns most ripe for a new warehouse, ranked on how far residents are from one today, how many underserved people live nearby, and whether the demographics look like Costco's core member base.</p>
+</header>
+
+<div id="map" role="img" aria-label="Map of the top 50 candidate locations and existing Costco warehouses"></div>
+
+<div class="panel">
+  <h3>Set your priorities</h3>
+  <p>Drag a slider to change how much each factor counts. The top 50 re-ranks instantly. Arrows show movement versus the default ranking.</p>
+  <div class="sl" id="sl"></div>
+  <div class="presets" id="presets"></div>
+</div>
+
+<div class="controls">
+  <input id="q" type="search" placeholder="Filter by city, state or metro…" aria-label="Filter">
+  <select id="st" aria-label="State"><option value="">All states</option></select>
+</div>
+
+<div class="card scroll"><table>
+<thead><tr id="head"></tr></thead>
+<tbody id="rows"></tbody>
+</table></div>
+<p id="count" style="color:var(--mute);font-size:13px"></p>
+
+<section class="method">
+<h2>How the score works</h2>
+<p>Every Census place with 40,000+ residents and a warehouse at least 8 miles away (339 places) is scored 0–100 as a weighted sum of seven components. The default weights are shown below; use the sliders above to change them. The top 50 are chosen greedily so no two picks sit within 20 miles of each other, so the list isn't one suburb cluster repeated.</p>
+<ul id="weights"><li>Default weights: distance to nearest warehouse 25%, underserved catchment 20%, income 20%, education 10%, density 10%, metro saturation 10%, homeownership 5%.</li></ul>
+<p><b>Metro area</b> is the Census metropolitan statistical area. <b>Underserved catchment</b> is the population living within 10 miles of the place in towns that are themselves more than 10 miles from any warehouse. <b>People per warehouse</b> is metro population divided by warehouses in the metro.</p>
+<h2>Data &amp; caveats</h2>
+<ul>
+<li>Demographics: American Community Survey 5-year estimates (latest release) via <a href="https://censusreporter.org">Census Reporter</a>. Land area and coordinates: Census Gazetteer 2024. Metro delineations: OMB/Census July 2023.</li>
+<li>Warehouse locations come from <a href="https://www.openstreetmap.org">OpenStreetMap</a> and may lag recent openings or announcements. A city that looks wide open may already have a warehouse under construction. Verify against <a href="https://www.costco.com/warehouse-locations">costco.com</a> before drawing conclusions.</li>
+<li>Distances are straight-line from the Census internal point of each place, not drive time. Places whose water area is more than twice their land area are excluded because their centroids are unreliable.</li>
+<li>Places are mapped to a metro through their nearest county centroid, which can misplace a few places near county lines.</li>
+<li>This is a screening model. It doesn't know about land availability, zoning, traffic, competing warehouse clubs (Sam's Club, BJ's) or Costco's actual expansion plans.</li>
+</ul>
+</section>
+<footer>Generated <span id="gen"></span> · <span id="nw"></span> warehouses · <span id="nc"></span> candidate places scored</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const LABELS={gap:"Distance to nearest warehouse",catch:"Underserved people within 10 mi",income:"Median household income",edu:"Bachelor's degree or higher",density:"Suburban density sweet spot",metro:"Metro people per warehouse",own:"Homeownership"};
+const COLS=[["rk","#"],["name","City"],["s","Score"],["pop","Pop."],["income","Income"],["ba","Bach.+"],["density","Density /mi²"],["nearest_mi","Nearest (mi)"],["catch","Underserved ≤10mi"]];
+const fmt={pop:n=>n.toLocaleString(),income:n=>"$"+n.toLocaleString(),ba:n=>Math.round(n*100)+"%",density:n=>n.toLocaleString(),nearest_mi:n=>n.toFixed(0),catch:n=>n.toLocaleString()};
+const $=id=>document.getElementById(id);
+const PRESETS={"Default":null,
+ "Biggest gap":{gap:50,catch:40,income:10,edu:0,density:0,metro:0,own:0},
+ "Wealthy & educated":{gap:15,catch:10,income:35,edu:30,density:5,metro:0,own:5},
+ "Suburban families":{gap:15,catch:15,income:15,edu:5,density:25,metro:0,own:25},
+ "Underserved metros":{gap:10,catch:15,income:10,edu:5,density:5,metro:50,own:5}};
+let D,W={},sort={k:"rk",asc:true},open=null,map,layer,list=[];
+fetch("data/rankings.json").then(r=>r.json()).then(d=>{D=d;init()});
+function clean(n){return n.replace(/ (city|town|CDP|village|borough|municipality)$/,"")}
+function hav(a,b,c,d){const p=Math.PI/180,x=Math.sin((c-a)*p/2)**2+Math.cos(a*p)*Math.cos(c*p)*Math.sin((d-b)*p/2)**2;return 7918*Math.asin(Math.sqrt(x))}
+function setW(w){Object.keys(LABELS).forEach(k=>W[k]=Math.round((w?w[k]:D.weights[k]*100)));syncSliders();update()}
+function syncSliders(){const t=Object.values(W).reduce((a,b)=>a+b,0)||1;Object.keys(W).forEach(k=>{$("w_"+k).value=W[k];$("v_"+k).textContent=Math.round(100*W[k]/t)+"%"})}
+function compute(){
+  const t=Object.values(W).reduce((a,b)=>a+b,0)||1;
+  D.places.forEach(p=>{p.s=Object.keys(W).reduce((s,k)=>s+W[k]*p.components[k],0)/t;p.rk=null});
+  const all=[...D.places].sort((a,b)=>b.s-a.s);list=[];
+  for(const p of all){if(list.every(q=>hav(p.lat,p.lon,q.lat,q.lon)>20))list.push(p);if(list.length===50)break}
+  list.forEach((p,i)=>p.rk=i+1);
+}
+function init(){
+  $("gen").textContent=D.generated;$("nw").textContent=D.warehouses;$("nc").textContent=D.candidates.toLocaleString();
+  $("sl").innerHTML=Object.entries(LABELS).map(([k,l])=>`<label>${l}<b id="v_${k}"></b><input type="range" id="w_${k}" min="0" max="100" step="5"></label>`).join("");
+  Object.keys(LABELS).forEach(k=>$("w_"+k).oninput=e=>{W[k]=+e.target.value;syncSliders();update()});
+  $("presets").innerHTML=Object.keys(PRESETS).map(n=>`<button data-p="${n}">${n}</button>`).join("");
+  $("presets").onclick=e=>{const n=e.target.dataset.p;if(n)setW(PRESETS[n])};
+  [...new Set(D.places.map(p=>p.state))].sort().forEach(s=>$("st").add(new Option(s,s)));
+  $("head").innerHTML=COLS.map(([k,l])=>`<th data-k="${k}">${l}</th>`).join("");
+  $("head").onclick=e=>{const k=e.target.dataset.k;if(!k)return;sort=sort.k===k?{k,asc:!sort.asc}:{k,asc:k==="rk"||k==="name"};render()};
+  $("q").oninput=$("st").onchange=render;
+  map=L.map("map",{scrollWheelZoom:false}).setView([39.5,-96],4);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:12,attribution:"© OpenStreetMap contributors"}).addTo(map);
+  D.costcos.forEach(c=>L.circleMarker(c,{radius:2.5,color:"#005dab",weight:0,fillOpacity:.55,interactive:false}).addTo(map));
+  layer=L.layerGroup().addTo(map);
+  $("rows").onclick=e=>{const tr=e.target.closest("tr[data-id]");if(!tr)return;const id=tr.dataset.id;open=open===id?null:id;if(open){const p=list.find(x=>x.id===id);map.flyTo([p.lat,p.lon],8,{duration:.6})}render()};
+  setW(null);
+}
+function update(){compute();layer.clearLayers();
+  list.forEach(p=>L.circleMarker([p.lat,p.lon],{radius:8,color:"#fff",weight:1.5,fillColor:"#e31837",fillOpacity:.95}).bindTooltip(`#${p.rk} ${clean(p.name)}, ${p.state}`).addTo(layer).on("click",()=>{open=p.id;render();document.getElementById("r"+p.id)?.scrollIntoView({block:"center"})}));
+  render()}
+function delta(p){if(!p.rank)return'<span class="dl nw">new</span>';const d=p.rank-p.rk;return d>0?`<span class="dl up">▲${d}</span>`:d<0?`<span class="dl dn">▼${-d}</span>`:""}
+function render(){
+  const q=$("q").value.toLowerCase(),st=$("st").value;
+  let rows=list.filter(p=>(!st||p.state===st)&&(!q||(p.name+" "+p.state+" "+(p.metro||"")).toLowerCase().includes(q)));
+  rows.sort((a,b)=>{const x=a[sort.k],y=b[sort.k];const c=typeof x==="string"?x.localeCompare(y):x-y;return sort.asc?c:-c});
+  [...$("head").children].forEach(th=>{th.className=th.dataset.k===sort.k?"on"+(sort.asc?" asc":""):""});
+  $("rows").innerHTML=rows.map(p=>{
+    let h=`<tr id="r${p.id}" data-id="${p.id}"><td class="rk">${p.rk}${delta(p)}</td><td class="city"><b>${clean(p.name)}, ${p.state}</b><small>${p.metro||"Outside a metro area"}</small></td><td><span class="score">${Math.round(p.s)}</span></td>`+
+      COLS.slice(3).map(([k])=>`<td>${fmt[k](p[k])}</td>`).join("")+"</tr>";
+    if(open===p.id)h+=`<tr class="detail"><td colspan="${COLS.length}"><div class="bars">`+Object.entries(p.components).map(([k,v])=>`<div class="bar">${LABELS[k]} <b>${v}</b><div><i style="width:${v}%"></i></div></div>`).join("")+
+      `</div><p style="margin:10px 0 0;color:var(--mute)">Nearest warehouse: ${p.nearest} (${p.nearest_mi} mi). Metro has ${p.metro_costcos} warehouse${p.metro_costcos===1?"":"s"} for ${p.metro_pop.toLocaleString()} people${p.pop_per_costco?` (${p.pop_per_costco.toLocaleString()} per warehouse)`:""}. Median age ${p.age}${p.own!=null?", "+Math.round(p.own*100)+"% homeowners":""}.</p></td></tr>`;
+    return h}).join("");
+  $("count").textContent=`Showing ${rows.length} of ${list.length}. Click a row for the score breakdown.`;
+}
+</script>
+</body>
+</html>
