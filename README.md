@@ -2,6 +2,8 @@
 
 Static GitHub Pages site ranking the 50 US places most ripe for a new Costco warehouse.
 
+**Live site: https://kuod.github.io/next-costco/**
+
 - `index.html` – the site (no build step; Leaflet from CDN)
 - `data/rankings.json` – output of the pipeline
 - `scripts/fetch_acs.py` – downloads ACS 5-year place data from Census Reporter (no API key)
