@@ -48,6 +48,9 @@ a{color:var(--blue)}
 button{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:99px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer}
 button:hover{border-color:var(--blue)}
 .dl{font-size:11px;margin-left:6px}.up{color:#1a8f4c}.dn{color:var(--red)}.nw{color:var(--blue)}
+.legend{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12.5px;line-height:1.9;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.legend label{display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.25)}
 </style>
 </head>
 <body>
@@ -79,13 +82,13 @@ button:hover{border-color:var(--blue)}
 
 <section class="method">
 <h2>How the score works</h2>
-<p>Every Census place with 40,000+ residents and a warehouse at least 8 miles away (339 places) is scored 0–100 as a weighted sum of seven components. The default weights are shown below; use the sliders above to change them. The top 50 are chosen greedily so no two picks sit within 20 miles of each other, so the list isn't one suburb cluster repeated.</p>
-<ul id="weights"><li>Default weights: distance to nearest warehouse 25%, underserved catchment 20%, income 20%, education 10%, density 10%, metro saturation 10%, homeownership 5%.</li></ul>
-<p><b>Metro area</b> is the Census metropolitan statistical area. <b>Underserved catchment</b> is the population living within 10 miles of the place in towns that are themselves more than 10 miles from any warehouse. <b>People per warehouse</b> is metro population divided by warehouses in the metro.</p>
+<p>Every Census place with 40,000+ residents and a warehouse at least 8 miles away (339 places) is scored 0–100 as a weighted sum of eight components. The default weights are shown below; use the sliders above to change them. The top 50 are chosen greedily so no two picks sit within 20 miles of each other, so the list isn't one suburb cluster repeated.</p>
+<ul id="weights"><li>Default weights: distance to nearest Costco 22%, underserved catchment 18%, income 18%, education 9%, density 9%, metro saturation 9%, rival-club distance 10%, homeownership 5%.</li></ul>
+<p><b>Metro area</b> is the Census metropolitan statistical area. <b>Underserved catchment</b> is the population living within 10 miles of the place in towns that are themselves more than 10 miles from any warehouse. <b>Rival-club distance</b> is the straight-line distance to the nearest Sam&#39;s Club or BJ&#39;s. A rival club nearby proves the market supports a warehouse club, but one right next door means a head-to-head fight, so the score peaks at 4–18 miles and falls off inside 4 and beyond 45. This is a judgment call: if you read rivals as pure competition, set its slider to 0. <b>People per warehouse</b> is metro population divided by warehouses in the metro.</p>
 <h2>Data &amp; caveats</h2>
 <ul>
 <li>Demographics: American Community Survey 5-year estimates (latest release) via <a href="https://censusreporter.org">Census Reporter</a>. Land area and coordinates: Census Gazetteer 2024. Metro delineations: OMB/Census July 2023.</li>
-<li>Warehouse locations come from <a href="https://www.openstreetmap.org">OpenStreetMap</a> and may lag recent openings or announcements. A city that looks wide open may already have a warehouse under construction. Verify against <a href="https://www.costco.com/warehouse-locations">costco.com</a> before drawing conclusions.</li>
+<li>Costco, Sam&#39;s Club and BJ&#39;s locations come from <a href="https://www.openstreetmap.org">OpenStreetMap</a> and may lag recent openings or announcements. A city that looks wide open may already have a warehouse under construction. Verify against <a href="https://www.costco.com/warehouse-locations">costco.com</a> before drawing conclusions.</li>
 <li>Distances are straight-line from the Census internal point of each place, not drive time. Places whose water area is more than twice their land area are excluded because their centroids are unreliable.</li>
 <li>Places are mapped to a metro through their nearest county centroid, which can misplace a few places near county lines.</li>
 <li>This is a screening model. It doesn't know about land availability, zoning, traffic, competing warehouse clubs (Sam's Club, BJ's) or Costco's actual expansion plans.</li>
@@ -96,15 +99,16 @@ button:hover{border-color:var(--blue)}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
-const LABELS={gap:"Distance to nearest warehouse",catch:"Underserved people within 10 mi",income:"Median household income",edu:"Bachelor's degree or higher",density:"Suburban density sweet spot",metro:"Metro people per warehouse",own:"Homeownership"};
-const COLS=[["rk","#"],["name","City"],["s","Score"],["pop","Pop."],["income","Income"],["ba","Bach.+"],["density","Density /mi²"],["nearest_mi","Nearest (mi)"],["catch","Underserved ≤10mi"]];
-const fmt={pop:n=>n.toLocaleString(),income:n=>"$"+n.toLocaleString(),ba:n=>Math.round(n*100)+"%",density:n=>n.toLocaleString(),nearest_mi:n=>n.toFixed(0),catch:n=>n.toLocaleString()};
+const LABELS={gap:"Distance to nearest warehouse",catch:"Underserved people within 10 mi",income:"Median household income",edu:"Bachelor's degree or higher",density:"Suburban density sweet spot",metro:"Metro people per warehouse",own:"Homeownership",comp:"Distance to nearest rival club (Sam's/BJ's)"};
+const COLS=[["rk","#"],["name","City"],["s","Score"],["pop","Pop."],["income","Income"],["ba","Bach.+"],["density","Density /mi²"],["nearest_mi","Nearest (mi)"],["catch","Underserved ≤10mi"],["comp_mi","Rival club (mi)"]];
+const fmt={pop:n=>n.toLocaleString(),income:n=>"$"+n.toLocaleString(),ba:n=>Math.round(n*100)+"%",density:n=>n.toLocaleString(),nearest_mi:n=>n.toFixed(0),catch:n=>n.toLocaleString(),comp_mi:n=>n.toFixed(0)};
 const $=id=>document.getElementById(id);
 const PRESETS={"Default":null,
- "Biggest gap":{gap:50,catch:40,income:10,edu:0,density:0,metro:0,own:0},
- "Wealthy & educated":{gap:15,catch:10,income:35,edu:30,density:5,metro:0,own:5},
- "Suburban families":{gap:15,catch:15,income:15,edu:5,density:25,metro:0,own:25},
- "Underserved metros":{gap:10,catch:15,income:10,edu:5,density:5,metro:50,own:5}};
+ "Biggest gap":{gap:50,catch:40,income:10,edu:0,density:0,metro:0,own:0,comp:0},
+ "Wealthy & educated":{gap:15,catch:10,income:35,edu:30,density:5,metro:0,own:5,comp:0},
+ "Suburban families":{gap:15,catch:15,income:15,edu:5,density:25,metro:0,own:25,comp:0},
+ "Rival-proven markets":{gap:15,catch:15,income:10,edu:5,density:5,metro:0,own:0,comp:50},
+ "Underserved metros":{gap:10,catch:15,income:10,edu:5,density:5,metro:50,own:5,comp:0}};
 let D,W={},sort={k:"rk",asc:true},open=null,map,layer,list=[];
 fetch("data/rankings.json").then(r=>r.json()).then(d=>{D=d;init()});
 function clean(n){return n.replace(/ (city|town|CDP|village|borough|municipality)$/,"")}
@@ -130,7 +134,17 @@ function init(){
   $("q").oninput=$("st").onchange=render;
   map=L.map("map",{scrollWheelZoom:false}).setView([39.5,-96],4);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:12,attribution:"© OpenStreetMap contributors"}).addTo(map);
-  D.costcos.forEach(c=>L.circleMarker(c,{radius:2.5,color:"#005dab",weight:0,fillOpacity:.55,interactive:false}).addTo(map));
+  const mk=(arr,color,r)=>{const g=L.layerGroup();arr.forEach(c=>L.circleMarker([c[0],c[1]],{radius:r,color:"#fff",weight:1,fillColor:color,fillOpacity:.9,interactive:false}).addTo(g));return g};
+  const G=[["Costco (existing)","#005dab",mk(D.costcos,"#005dab",4.5)],
+    [D.brands[0]+" (rival)","#e08a00",mk(D.competitors.filter(c=>c[2]===0),"#e08a00",3.5)],
+    [D.brands[1]+" (rival)","#8a3ffc",mk(D.competitors.filter(c=>c[2]===1),"#8a3ffc",3.5)]];
+  G.forEach(g=>g[2].addTo(map));
+  const lg=L.control({position:"bottomleft"});
+  lg.onAdd=()=>{const d=L.DomUtil.create("div","legend");
+    d.innerHTML=G.map((g,i)=>`<label><input type="checkbox" checked data-g="${i}"><i style="background:${g[1]}"></i>${g[0]} <small style="color:var(--mute)">${i?D.competitors.filter(c=>c[2]===i-1).length:D.costcos.length}</small></label>`).join("")+`<label style="cursor:default"><input type="checkbox" checked disabled style="visibility:hidden"><i style="background:#e31837"></i>Top 50 candidates</label>`;
+    L.DomEvent.disableClickPropagation(d);
+    d.onchange=e=>{const g=G[+e.target.dataset.g][2];e.target.checked?g.addTo(map):map.removeLayer(g)};return d};
+  lg.addTo(map);
   layer=L.layerGroup().addTo(map);
   $("rows").onclick=e=>{const tr=e.target.closest("tr[data-id]");if(!tr)return;const id=tr.dataset.id;open=open===id?null:id;if(open){const p=list.find(x=>x.id===id);map.flyTo([p.lat,p.lon],8,{duration:.6})}render()};
   setW(null);
@@ -148,7 +162,7 @@ function render(){
     let h=`<tr id="r${p.id}" data-id="${p.id}"><td class="rk">${p.rk}${delta(p)}</td><td class="city"><b>${clean(p.name)}, ${p.state}</b><small>${p.metro||"Outside a metro area"}</small></td><td><span class="score">${Math.round(p.s)}</span></td>`+
       COLS.slice(3).map(([k])=>`<td>${fmt[k](p[k])}</td>`).join("")+"</tr>";
     if(open===p.id)h+=`<tr class="detail"><td colspan="${COLS.length}"><div class="bars">`+Object.entries(p.components).map(([k,v])=>`<div class="bar">${LABELS[k]} <b>${v}</b><div><i style="width:${v}%"></i></div></div>`).join("")+
-      `</div><p style="margin:10px 0 0;color:var(--mute)">Nearest warehouse: ${p.nearest} (${p.nearest_mi} mi). Metro has ${p.metro_costcos} warehouse${p.metro_costcos===1?"":"s"} for ${p.metro_pop.toLocaleString()} people${p.pop_per_costco?` (${p.pop_per_costco.toLocaleString()} per warehouse)`:""}. Median age ${p.age}${p.own!=null?", "+Math.round(p.own*100)+"% homeowners":""}.</p></td></tr>`;
+      `</div><p style="margin:10px 0 0;color:var(--mute)">Nearest Costco: ${p.nearest} (${p.nearest_mi} mi). Nearest rival club: ${p.comp} (${p.comp_mi} mi). Metro has ${p.metro_costcos} warehouse${p.metro_costcos===1?"":"s"} for ${p.metro_pop.toLocaleString()} people${p.pop_per_costco?` (${p.pop_per_costco.toLocaleString()} per warehouse)`:""}. Median age ${p.age}${p.own!=null?", "+Math.round(p.own*100)+"% homeowners":""}.</p></td></tr>`;
     return h}).join("");
   $("count").textContent=`Showing ${rows.length} of ${list.length}. Click a row for the score breakdown.`;
 }

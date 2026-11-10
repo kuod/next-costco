@@ -19,6 +19,20 @@ for e in els:
     cos.append((lat, lon, t.get("name", "Costco"), t.get("addr:city", "")))
 print("warehouses", len(cos), file=sys.stderr)
 
+# --- competing warehouse clubs (Sam's Club, BJ's), stores only, de-duplicated per brand
+comps = []  # (lat, lon, brand_idx)  0=Sam's Club 1=BJ's
+for e in json.load(open("raw/competitors_osm.json"))["elements"]:
+    t = e["tags"]
+    if t.get("shop") not in ("wholesale", "supermarket"): continue
+    nm = (t.get("brand") or t.get("name") or "").lower().replace("\u2019", "'")
+    b = 0 if nm.startswith("sam") else 1 if nm.startswith("bj") else None
+    if b is None: continue
+    lat = e.get("lat") or e["center"]["lat"]; lon = e.get("lon") or e["center"]["lon"]
+    if any(c[2] == b and abs(lat - c[0]) < .005 and abs(lon - c[1]) < .005 for c in comps): continue
+    comps.append((lat, lon, b))
+BRANDS = ["Sam's Club", "BJ's"]
+print("competitors", len(comps), file=sys.stderr)
+
 # --- counties -> CBSA
 cb = {}
 ws = openpyxl.load_workbook("raw/geo/list1_2023.xlsx").active
@@ -53,6 +67,8 @@ print("places", len(places), file=sys.stderr)
 
 for p in places:
     d, i = min((hav(p["lat"], p["lon"], c[0], c[1]), j) for j, c in enumerate(cos))
+    cd_, ci = min((hav(p["lat"], p["lon"], c[0], c[1]), j) for j, c in enumerate(comps))
+    p["comp_mi"] = round(cd_, 1); p["comp"] = BRANDS[comps[ci][2]]
     p["nearest_mi"] = round(d, 1); p["nearest"] = f"{cos[i][3] or cos[i][2]}"
     cd = min(counties, key=lambda c: hav(p["lat"], p["lon"], c[1], c[2]) if c[3] == p["state"] else 1e9)
     m = cb.get(cd[0]); p["metro"] = m[0] if m else None; p["cbsa"] = m[1] if m else None
@@ -75,7 +91,7 @@ for p in places:
 # --- scoring (each component 0-100, weighted)
 def ramp(x, lo, hi): return max(0, min(1, (x - lo) / (hi - lo)))
 def tent(x, lo, a, b, hi): return ramp(x, lo, a) if x < a else (1 if x <= b else 1 - ramp(x, b, hi))
-W = dict(gap=.25, catch=.20, income=.20, edu=.10, density=.10, metro=.10, own=.05)
+W = dict(gap=.22, catch=.18, income=.18, edu=.09, density=.09, metro=.09, own=.05, comp=.10)
 for p in places:
     c = dict(
         gap=ramp(p["nearest_mi"], 6, 25),                    # distance to nearest warehouse
@@ -84,7 +100,8 @@ for p in places:
         edu=ramp(p["ba"], .20, .55),
         density=tent(p["density"], 300, 1500, 5000, 12000),   # suburban sweet spot
         metro=ramp(p["pop_per_costco"] or 0, 150000, 450000) if p["cbsa"] else 0.15,
-        own=ramp(p["own"] or 0, .45, .75))
+        own=ramp(p["own"] or 0, .45, .75),
+        comp=tent(p["comp_mi"], 0, 4, 18, 45))              # proven club demand nearby, but not head-to-head
     p["components"] = {k: round(v * 100, 2) for k, v in c.items()}
     p["score"] = 100 * sum(W[k] * c[k] for k in W)
 
@@ -94,9 +111,10 @@ for p in cand:  # greedy de-dup: one pick per ~20 miles so the list isn't one cl
     if all(hav(p["lat"], p["lon"], q["lat"], q["lon"]) > 20 for q in top): top.append(p)
     if len(top) == 50: break
 for i, p in enumerate(top, 1): p["rank"] = i
-KEEP = ("id","name","state","lat","lon","pop","income","ba","density","nearest_mi","nearest","catch","metro","metro_costcos","metro_pop","pop_per_costco","age","own","components","score")
+KEEP = ("comp_mi","comp","id","name","state","lat","lon","pop","income","ba","density","nearest_mi","nearest","catch","metro","metro_costcos","metro_pop","pop_per_costco","age","own","components")
 for p in cand: p.setdefault("rank", None)
 json.dump(dict(generated="2026-11-10", weights=W, warehouses=len(cos), candidates=len(cand),
                places=[{k: p.get(k) for k in KEEP + ("rank",)} for p in cand],
-               costcos=[[round(c[0], 4), round(c[1], 4)] for c in cos]), open("data/rankings.json", "w"), separators=(",", ":"))
+               costcos=[[round(c[0], 4), round(c[1], 4)] for c in cos],
+               competitors=[[round(c[0], 4), round(c[1], 4), c[2]] for c in comps], brands=BRANDS), open("data/rankings.json", "w"), separators=(",", ":"))
 for p in top: print(p["rank"], p["name"], p["state"], p["score"], p["pop"], p["income"], p["nearest_mi"], p["metro"], p["catch"])
